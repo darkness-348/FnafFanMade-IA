@@ -178,6 +178,20 @@ async def websocket_game(websocket: WebSocket):
                         "type": "SHOCK_EVENT",
                         "event": res
                     }))
+            elif msg_type == "DEFUSE_BONNET":
+                res = game_manager.defuse_bonnet()
+                if res:
+                    await websocket.send_text(json.dumps({
+                        "type": "GAME_EVENT",
+                        "event": res
+                    }))
+            elif msg_type == "DEFUSE_LOLBIT":
+                res = game_manager.defuse_lolbit()
+                if res:
+                    await websocket.send_text(json.dumps({
+                        "type": "GAME_EVENT",
+                        "event": res
+                    }))
             elif msg_type == "START_NIGHT":
                 night = data.get("night", 1)
                 game_manager.start_night(night)

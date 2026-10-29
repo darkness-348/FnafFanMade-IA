@@ -55,6 +55,27 @@ class GameManager:
         self.shock_cooldown = 30.0
         self.ai_stun_timer = 0.0
 
+        # Mask & Bunker Countermeasures
+        self.mask_on: bool = False
+        self.bunker_duration: float = 0.0
+        self.door_hacked_side: Optional[str] = None
+        self.door_hack_timer: float = 0.0
+
+        # Toy Bonnie (Random Office Infiltration)
+        self.toy_bonnie_active: bool = False
+        self.toy_bonnie_timer: float = 0.0
+        self.toy_bonnie_cooldown: float = 24.0
+
+        # Bonnet (Nose Click Challenge)
+        self.bonnet_active: bool = False
+        self.bonnet_timer: float = 0.0
+        self.bonnet_cooldown: float = 32.0
+
+        # Lolbit (Type 'LOL' Challenge)
+        self.lolbit_active: bool = False
+        self.lolbit_timer: float = 0.0
+        self.lolbit_cooldown: float = 38.0
+
         # Active threat / attacks
         self.active_attacks: List[ActiveAttack] = []
         self.pending_events: List[Dict[str, Any]] = []
@@ -98,6 +119,21 @@ class GameManager:
         self.impostor_peeking_center_vent = False
         self.center_vent_peek_timer = 0.0
 
+        # Reset Countermeasures & Special Animatronics
+        self.mask_on = False
+        self.bunker_duration = 0.0
+        self.door_hacked_side = None
+        self.door_hack_timer = 0.0
+        self.toy_bonnie_active = False
+        self.toy_bonnie_timer = 0.0
+        self.toy_bonnie_cooldown = 24.0
+        self.bonnet_active = False
+        self.bonnet_timer = 0.0
+        self.bonnet_cooldown = 32.0
+        self.lolbit_active = False
+        self.lolbit_timer = 0.0
+        self.lolbit_cooldown = 38.0
+
         if night_number == 0:
             # Modo Prueba: Presente pero inofensivo (sin muertes)
             self.base_drain_rate = 0.0
@@ -117,11 +153,20 @@ class GameManager:
         return self.session_id
 
     def update_telemetry(self, telemetry: Dict[str, Any]):
-        self.left_door = telemetry.get("left_door", self.left_door)
-        self.right_door = telemetry.get("right_door", self.right_door)
+        if self.door_hacked_side == "left":
+            self.left_door = False
+        else:
+            self.left_door = telemetry.get("left_door", self.left_door)
+
+        if self.door_hacked_side == "right":
+            self.right_door = False
+        else:
+            self.right_door = telemetry.get("right_door", self.right_door)
+
         self.right_vent = telemetry.get("right_vent", self.right_vent)
         self.top_vent = telemetry.get("top_vent", self.top_vent)
         self.flashlight = telemetry.get("flashlight", self.flashlight)
+        self.mask_on = telemetry.get("mask_on", self.mask_on)
         self.pan_x = telemetry.get("pan_x", self.pan_x)
         self.looking_at_monitor = telemetry.get("looking_at_monitor", self.looking_at_monitor)
         
@@ -132,6 +177,40 @@ class GameManager:
         
         # Check if telemetry blocks any active attack immediately
         self._check_defenses()
+
+    def defuse_bonnet(self) -> Dict[str, Any]:
+        """Player clicked Bonnet's nose!"""
+        if self.bonnet_active:
+            self.bonnet_active = False
+            self.bonnet_timer = 0.0
+            return {
+                "type": "BONNET_DEFUSED",
+                "sound": "pop.wav",
+                "message": "¡Boop! Le tocaste la nariz a Bonnet y desapareció."
+            }
+        return {}
+
+    def defuse_lolbit(self) -> Dict[str, Any]:
+        """Player typed 'LOL' within 2 seconds!"""
+        if self.lolbit_active:
+            self.lolbit_active = False
+            self.lolbit_timer = 0.0
+            return {
+                "type": "LOLBIT_DEFUSED",
+                "sound": "blip.wav",
+                "message": "✅ ¡Escribiste LOL a tiempo! Transmisión de Lolbit neutralizada."
+            }
+        return {}
+
+    def spawn_bonnet(self, events: List[Dict[str, Any]]):
+        self.bonnet_active = True
+        self.bonnet_timer = 5.5
+        events.append({
+            "type": "BONNET_SPAWN",
+            "duration": 5.5,
+            "sound": "Bonnet02b.wav",
+            "message": "🎀 ¡Bonnet cruzando la oficina! ¡Haz clic en su nariz antes de que llegue a la izquierda!"
+        })
 
     def _check_defenses(self):
         resolved = []
@@ -198,9 +277,17 @@ class GameManager:
             update_decision_outcome(atk.decision_id, "BLOCKED")
         self.active_attacks.clear()
 
+        # If any door was hacked by AI, restore it!
+        unhacked_side = None
+        if self.door_hacked_side:
+            unhacked_side = self.door_hacked_side
+            self.door_hacked_side = None
+            self.door_hack_timer = 0.0
+
         return {
             "type": "CONTROLLED_SHOCK_SUCCESS",
-            "message": "¡Descarga eléctrica exitosa! IA reiniciada temporalmente (aturdida por 8s).",
+            "unhacked_side": unhacked_side,
+            "message": f"¡Descarga eléctrica exitosa! IA reiniciada temporalmente (aturdida por 8s).{' ¡Puerta ' + unhacked_side.upper() + ' liberada!' if unhacked_side else ''}",
             "sound": "shock.wav"
         }
 
@@ -357,7 +444,144 @@ class GameManager:
                 elif event.get("type") == "SPECIAL_AUDIO_MOVE":
                     events.append(event)
 
-        # 6. Periodic Adaptive AI Strategic Decision
+        # 6. Anti-Bunker & Special Animatronic Cycles
+        import random
+
+        # --- A. Bunker Detection & AI Countermeasures ---
+        is_bunkered = self.left_door and self.right_door and (self.top_vent or self.right_vent)
+        if is_bunkered:
+            self.bunker_duration += dt
+            if self.bunker_duration >= 6.5 and not self.door_hacked_side and not self.bonnet_active:
+                self.bunker_duration = 0.0
+                decision = random.choice(["HACK_DOOR", "FAKE_DOOR", "SPAWN_BONNET"])
+                if decision == "HACK_DOOR":
+                    target_side = random.choice(["left", "right"])
+                    self.door_hacked_side = target_side
+                    self.door_hack_timer = 6.5
+                    if target_side == "left":
+                        self.left_door = False
+                    else:
+                        self.right_door = False
+                    events.append({
+                        "type": "AI_DOOR_HACK",
+                        "side": target_side,
+                        "sound": "doorFX.wav",
+                        "message": f"🚨 ¡LA IA FORZÓ LA PUERTA {target_side.upper()}! ¡USA SHOCK [E] PARA REINICIARLA!"
+                    })
+                elif decision == "FAKE_DOOR":
+                    fake_side = random.choice(["left", "right"])
+                    events.append({
+                        "type": "AI_FAKE_DOOR",
+                        "side": fake_side,
+                        "sound": "doorFX.wav",
+                        "message": f"⚠️ La IA fingió abrir la puerta {fake_side.upper()} (Falsa Alarma táctica)"
+                    })
+                elif decision == "SPAWN_BONNET":
+                    if not self.bonnet_active:
+                        self.spawn_bonnet(events)
+        else:
+            self.bunker_duration = max(0.0, self.bunker_duration - dt * 0.5)
+
+        # Handle Door Hack timer (player must shock [E] in time!)
+        if self.door_hacked_side:
+            self.door_hack_timer -= dt
+            if self.door_hack_timer <= 0:
+                hacked_s = self.door_hacked_side
+                self.door_hacked_side = None
+                if self.night_number == 0:
+                    events.append({
+                        "type": "TEST_MODE_EVENT",
+                        "sound": "blockb.wav",
+                        "message": f"[Modo Prueba] La IA aprovechó la puerta {hacked_s} forzada. ¡En noche real debes usar Shock [E]!"
+                    })
+                else:
+                    self.trigger_jumpscare("IA Breach Stalker", f"La IA forzó tu puerta {hacked_s} y no aplicaste la descarga a tiempo", "fnaf6scream.wav", events)
+                    return events
+
+        # --- B. Toy Bonnie Random Office Infiltration ---
+        self.toy_bonnie_cooldown -= dt
+        if self.toy_bonnie_cooldown <= 0 and not self.toy_bonnie_active:
+            self.toy_bonnie_cooldown = random.uniform(25.0, 42.0)
+            self.toy_bonnie_active = True
+            self.toy_bonnie_timer = 4.5
+            events.append({
+                "type": "TOY_BONNIE_APPEAR",
+                "duration": 4.5,
+                "sound": "breathing.wav",
+                "message": "🐰 ¡Toy Bonnie entró en la oficina! ¡PONTE LA MÁSCARA DE FREDDY [ESPACIO]!"
+            })
+
+        if self.toy_bonnie_active:
+            self.toy_bonnie_timer -= dt
+            # After 1.3 seconds of entering, if player still has NO mask on:
+            if self.toy_bonnie_timer <= 3.2 and not self.mask_on:
+                self.toy_bonnie_active = False
+                if self.night_number == 0:
+                    events.append({
+                        "type": "TEST_MODE_EVENT",
+                        "sound": "blockb.wav",
+                        "message": "[Modo Prueba] Toy Bonnie te descubrió sin máscara de Freddy. ¡En noche real te mataría!"
+                    })
+                else:
+                    self.trigger_jumpscare("Toy Bonnie", "No te pusiste la máscara de Freddy a tiempo mientras cruzaba la oficina", "fnaf2scream.wav", events)
+                    return events
+            elif self.toy_bonnie_timer <= 0:
+                # Successfully fooled Toy Bonnie with mask!
+                self.toy_bonnie_active = False
+                events.append({
+                    "type": "TOY_BONNIE_LEAVE",
+                    "sound": "pop.wav",
+                    "message": "Toy Bonnie te confundió con Freddy y abandonó la oficina."
+                })
+
+        # --- C. Bonnet Nose Click Challenge ---
+        self.bonnet_cooldown -= dt
+        if self.bonnet_cooldown <= 0 and not self.bonnet_active:
+            self.bonnet_cooldown = random.uniform(30.0, 48.0)
+            self.spawn_bonnet(events)
+
+        if self.bonnet_active:
+            self.bonnet_timer -= dt
+            if self.bonnet_timer <= 0:
+                self.bonnet_active = False
+                if self.night_number == 0:
+                    events.append({
+                        "type": "TEST_MODE_EVENT",
+                        "sound": "blockb.wav",
+                        "message": "[Modo Prueba] Bonnet cruzó sin que presionaras su nariz. ¡En noche real te mataría!"
+                    })
+                else:
+                    self.trigger_jumpscare("Bonnet", "No presionaste la nariz de Bonnet antes de que cruzara la pantalla", "fnaf6scream.wav", events)
+                    return events
+
+        # --- D. Lolbit 'Type LOL' Challenge ---
+        self.lolbit_cooldown -= dt
+        if self.lolbit_cooldown <= 0 and not self.lolbit_active:
+            self.lolbit_cooldown = random.uniform(38.0, 60.0)
+            self.lolbit_active = True
+            self.lolbit_timer = 2.0 # Exact 2 seconds as requested!
+            events.append({
+                "type": "LOLBIT_APPEAR",
+                "duration": 2.0,
+                "sound": "glitch1c.wav",
+                "message": "📺 ¡INTERRUPCIÓN DE LOLBIT! ¡ESCRIBE 'L-O-L' EN 2 SEGUNDOS!"
+            })
+
+        if self.lolbit_active:
+            self.lolbit_timer -= dt
+            if self.lolbit_timer <= 0:
+                self.lolbit_active = False
+                # Penalización: Fuerza la apertura de ambas puertas y drena 5% de energía
+                self.left_door = False
+                self.right_door = False
+                self.power = max(0.0, self.power - 5.0)
+                events.append({
+                    "type": "LOLBIT_FAIL",
+                    "sound": "glitch3c.wav",
+                    "message": "❌ ¡Tiempo agotado! Lolbit forzó la apertura de tus puertas y sobrecargó la energía."
+                })
+
+        # 7. Periodic Adaptive AI Strategic Decision
         if self.ai_stun_timer > 0:
             self.ai_stun_timer -= dt
         else:
@@ -459,6 +683,7 @@ class GameManager:
             "right_vent": self.right_vent,
             "top_vent": self.top_vent,
             "flashlight": self.flashlight,
+            "mask_on": self.mask_on,
             "pan_x": self.pan_x,
             "looking_at_monitor": self.looking_at_monitor
         }
@@ -490,6 +715,14 @@ class GameManager:
             "right_vent": self.right_vent,
             "top_vent": self.top_vent,
             "flashlight": self.flashlight,
+            "mask_on": self.mask_on,
+            "door_hacked_side": self.door_hacked_side,
+            "toy_bonnie_active": self.toy_bonnie_active,
+            "toy_bonnie_timer": round(self.toy_bonnie_timer, 1),
+            "bonnet_active": self.bonnet_active,
+            "bonnet_timer": round(self.bonnet_timer, 1),
+            "lolbit_active": self.lolbit_active,
+            "lolbit_timer": round(self.lolbit_timer, 1),
             "pan_x": round(self.pan_x, 2),
             "active_threats_count": len(self.active_attacks),
             "shock_cooldown_left": round(shock_cooldown_left, 1),

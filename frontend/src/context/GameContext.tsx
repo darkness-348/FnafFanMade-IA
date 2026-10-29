@@ -25,6 +25,10 @@ interface GameContextType {
   setCurrentCam: (cam: number) => void;
   toggleFlashlight: () => void;
   setFlashlight: (val: boolean) => void;
+  toggleMask: () => void;
+  setMask: (val: boolean) => void;
+  defuseBonnet: () => void;
+  defuseLolbit: () => void;
   setPanX: (val: number) => void;
   sendReaction: (action: string) => void;
   refreshProgress: () => Promise<void>;
@@ -54,6 +58,14 @@ const initialGameState: GameState = {
   impostor_cam: 1,
   impostor_form: '761.png',
   impostor_peeking_center_vent: false,
+  mask_on: false,
+  door_hacked_side: null,
+  toy_bonnie_active: false,
+  toy_bonnie_timer: 0,
+  bonnet_active: false,
+  bonnet_timer: 0,
+  lolbit_active: false,
+  lolbit_timer: 0,
 };
 
 const initialProgress: GameProgress = {
@@ -163,6 +175,38 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setActiveTacticalAlert(null);
     } else if ((ev as any).type === 'TEST_MODE_EVENT') {
       soundManager.playSound((ev as any).sound || 'blockb.wav');
+    } else if ((ev as any).type === 'AI_DOOR_HACK') {
+      soundManager.playSound('doorFX.wav');
+      setActiveTacticalAlert({
+        type: 'AI_TACTICAL_ACTION',
+        action: 'ENTER_LEFT_DOOR',
+        decision_id: 999,
+        reason: (ev as any).message,
+        sound: 'doorFX.wav',
+        direction: (ev as any).side === 'left' ? 'left' : 'right',
+        stereo_pan: (ev as any).side === 'left' ? -0.8 : 0.8,
+        deadline_seconds: 6.5,
+        message: (ev as any).message
+      });
+    } else if ((ev as any).type === 'AI_FAKE_DOOR') {
+      soundManager.playSound('doorFX.wav');
+    } else if ((ev as any).type === 'DOOR_UNHACKED') {
+      soundManager.playSound('shock.wav');
+      setActiveTacticalAlert(null);
+    } else if ((ev as any).type === 'TOY_BONNIE_APPEAR') {
+      soundManager.playSound('breathing.wav');
+    } else if ((ev as any).type === 'TOY_BONNIE_LEAVE') {
+      soundManager.playSound('pop.wav');
+    } else if ((ev as any).type === 'BONNET_SPAWN') {
+      soundManager.playSound('Bonnet02b.wav', { volume: 1.0 });
+    } else if ((ev as any).type === 'BONNET_DEFUSED') {
+      soundManager.playSound('pop.wav', { volume: 1.2 });
+    } else if ((ev as any).type === 'LOLBIT_APPEAR') {
+      soundManager.playSound('glitch1c.wav', { volume: 1.0 });
+    } else if ((ev as any).type === 'LOLBIT_DEFUSED') {
+      soundManager.playSound('blip.wav', { volume: 1.0 });
+    } else if ((ev as any).type === 'LOLBIT_FAIL') {
+      soundManager.playSound('glitch3c.wav', { volume: 1.1 });
     } else if (ev.type === 'SPECIAL_AUDIO_MOVE') {
       // Play the special audio (audio01.wav) with stereo panning!
       soundManager.playSpecialAudio(ev.sound, ev.stereo_pan);
@@ -208,6 +252,7 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
           right_vent: partialState.right_vent ?? gameState.right_vent,
           top_vent: partialState.top_vent ?? gameState.top_vent,
           flashlight: partialState.flashlight ?? gameState.flashlight,
+          mask_on: partialState.mask_on ?? gameState.mask_on,
           pan_x: partialState.pan_x ?? gameState.pan_x,
           looking_at_monitor: partialState.looking_at_monitor ?? gameState.looking_at_monitor,
         }
@@ -217,18 +262,26 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Control Actions
   const toggleLeftDoor = useCallback(() => {
+    if (gameState.door_hacked_side === 'left') {
+      soundManager.playSound('doorFX.wav');
+      return; // Blocked by AI Door Hack
+    }
     const nextVal = !gameState.left_door;
     setGameState((prev) => ({ ...prev, left_door: nextVal }));
     soundManager.playDoorThud();
     sendTelemetry({ left_door: nextVal });
-  }, [gameState.left_door, sendTelemetry]);
+  }, [gameState.door_hacked_side, gameState.left_door, sendTelemetry]);
 
   const toggleRightDoor = useCallback(() => {
+    if (gameState.door_hacked_side === 'right') {
+      soundManager.playSound('doorFX.wav');
+      return; // Blocked by AI Door Hack
+    }
     const nextVal = !gameState.right_door;
     setGameState((prev) => ({ ...prev, right_door: nextVal }));
     soundManager.playDoorThud();
     sendTelemetry({ right_door: nextVal });
-  }, [gameState.right_door, sendTelemetry]);
+  }, [gameState.door_hacked_side, gameState.right_door, sendTelemetry]);
 
   const toggleRightVent = useCallback(() => {
     const nextVal = !gameState.right_vent;
@@ -251,6 +304,53 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
       wsRef.current.send(JSON.stringify({ type: 'CONTROLLED_SHOCK' }));
     }
   }, [gameState.shock_cooldown_left]);
+
+  const toggleMask = useCallback(() => {
+    if (gameState.looking_at_monitor) return;
+    const nextVal = !gameState.mask_on;
+    setGameState((prev) => ({
+      ...prev,
+      mask_on: nextVal,
+      flashlight: nextVal ? false : prev.flashlight,
+    }));
+    if (nextVal) {
+      soundManager.playSound('maskon.wav', { volume: 0.9 });
+    } else {
+      soundManager.playSound('maskoff.wav', { volume: 0.9 });
+    }
+    sendTelemetry({ mask_on: nextVal, flashlight: nextVal ? false : gameState.flashlight });
+  }, [gameState.looking_at_monitor, gameState.mask_on, gameState.flashlight, sendTelemetry]);
+
+  const setMask = useCallback((val: boolean) => {
+    if (gameState.looking_at_monitor && val) return;
+    setGameState((prev) => ({
+      ...prev,
+      mask_on: val,
+      flashlight: val ? false : prev.flashlight,
+    }));
+    if (val) {
+      soundManager.playSound('maskon.wav', { volume: 0.9 });
+    } else {
+      soundManager.playSound('maskoff.wav', { volume: 0.9 });
+    }
+    sendTelemetry({ mask_on: val, flashlight: val ? false : gameState.flashlight });
+  }, [gameState.looking_at_monitor, gameState.flashlight, sendTelemetry]);
+
+  const defuseBonnet = useCallback(() => {
+    soundManager.playSound('pop.wav', { volume: 1.2 });
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'DEFUSE_BONNET' }));
+    }
+    setGameState((prev) => ({ ...prev, bonnet_active: false }));
+  }, []);
+
+  const defuseLolbit = useCallback(() => {
+    soundManager.playSound('blip.wav', { volume: 1.0 });
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'DEFUSE_LOLBIT' }));
+    }
+    setGameState((prev) => ({ ...prev, lolbit_active: false }));
+  }, []);
 
   const toggleMonitor = useCallback(() => {
     const nextVal = !gameState.looking_at_monitor;
@@ -373,6 +473,10 @@ export const GameProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCurrentCam,
         toggleFlashlight,
         setFlashlight,
+        toggleMask,
+        setMask,
+        defuseBonnet,
+        defuseLolbit,
         setPanX,
         sendReaction,
         refreshProgress

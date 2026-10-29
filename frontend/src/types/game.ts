@@ -24,6 +24,14 @@ export interface GameState {
   impostor_cam?: number;
   impostor_form?: string;
   impostor_peeking_center_vent?: boolean;
+  mask_on?: boolean;
+  door_hacked_side?: string | null;
+  toy_bonnie_active?: boolean;
+  toy_bonnie_timer?: number;
+  bonnet_active?: boolean;
+  bonnet_timer?: number;
+  lolbit_active?: boolean;
+  lolbit_timer?: number;
 }
 
 export interface GameProgress {
