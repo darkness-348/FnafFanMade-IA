@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    -webkit-user-select: none;
+    background-color: #000;
+    color: #fff;
+    overflow: hidden;
+    font-family: 'Share Tech Mono', 'Courier New', monospace;
+  }
+}
+
+/* Yellow / Black Hazard Warning Stripes */
+.repeating-linear-warning {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(234, 179, 8, 0.4),
+    rgba(234, 179, 8, 0.4) 12px,
+    rgba(0, 0, 0, 0.7) 12px,
+    rgba(0, 0, 0, 0.7) 24px
+  );
+}
+
+/* Custom subtle scrollbar for dashboard */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0f1015;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2b36;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3b3c4a;
+}
+
