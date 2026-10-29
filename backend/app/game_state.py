@@ -148,9 +148,15 @@ class GameManager:
             elif attack.action == "REQUIRE_FLASHLIGHT" and self.flashlight:
                 blocked = True
             elif attack.action == "MOVE_SOUND":
-                # Special animatronic audio cue blocked by appropriate defense
-                special = self.registry.get("Shadow Acoustic Stalker")
-                if special and special.on_player_reaction("react", self):
+                # Neutralizado según la dirección del sonido o búnker total
+                if attack.direction == "left" and (self.left_door or (self.pan_x < 0.35 and self.flashlight)):
+                    blocked = True
+                elif attack.direction == "right" and (self.right_door or self.right_vent or (self.pan_x > 0.65 and self.flashlight)):
+                    blocked = True
+                elif attack.direction == "center" and (self.top_vent or self.flashlight or (self.left_door and self.right_door)):
+                    blocked = True
+                elif self.left_door and self.right_door:
+                    # Cerró todas las puertas principales
                     blocked = True
                     
             if blocked:

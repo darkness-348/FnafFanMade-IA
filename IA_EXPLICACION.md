@@ -183,3 +183,4 @@ Cuando escuches el sonido, se abre una ventana de reacción crítica de **3.5 a 
   * `ai_knowledge_base`: Guarda la tabla de valores $Q$ y las estadísticas de hábitos acumuladas.
 * **Segunda Ventana en Vivo:**
   * Puedes abrir `http://localhost:5173/#/dashboard` en un segundo monitor para ver los gráficos de tus puntos ciegos, la confianza de la IA y el registro de decisiones en vivo mientras juegas.
+

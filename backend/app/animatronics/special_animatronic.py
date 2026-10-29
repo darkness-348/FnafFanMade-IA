@@ -90,9 +90,13 @@ class SpecialAudioAnimatronic(BaseAnimatronic):
         left_door = getattr(game_state, "left_door", False)
         right_door = getattr(game_state, "right_door", False)
         right_vent = getattr(game_state, "right_vent", False)
+        top_vent = getattr(game_state, "top_vent", False)
 
         success = False
-        if self.current_sound_direction == "left":
+        # Si cerró ambas puertas principales, siempre se bloquea
+        if left_door and right_door:
+            success = True
+        elif self.current_sound_direction == "left":
             # Left attack blocked by left door OR by panning left + flashlight
             if left_door or (pan_x < 0.35 and flashlight):
                 success = True
@@ -101,8 +105,8 @@ class SpecialAudioAnimatronic(BaseAnimatronic):
             if right_door or right_vent or (pan_x > 0.65 and flashlight):
                 success = True
         elif self.current_sound_direction == "center":
-            # Center attack blocked by shining flashlight
-            if flashlight and 0.25 <= pan_x <= 0.75:
+            # Center attack blocked by shining flashlight OR top vent
+            if flashlight or top_vent:
                 success = True
 
         if success:
